@@ -1,4 +1,4 @@
-# parking-ai — 충남 매장 주차 정보 데이터·AI 파트
+# AI — 충남 매장 주차 정보 데이터·AI 파트
 
 충남 음식점 39,365곳마다 "차로 가면 주차가 어떤가"를 공공데이터로 미리 계산해 두는 파이프라인입니다.
 결과물은 `frontend/docs/API.md`(v0.1)의 `GET /places/{placeId}/parking` 응답 모양 그대로라서,
