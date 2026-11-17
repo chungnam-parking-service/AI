@@ -2,3 +2,4 @@ pandas>=2.2
 numpy>=1.26
 scikit-learn>=1.5
 lightgbm==4.5.0  # train_parking_lgbm.py 에서만 필요
+openai>=1.40     # assistant/ 에서만 필요

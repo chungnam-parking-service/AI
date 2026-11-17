@@ -1,0 +1,25 @@
+{"q": "천안 직산에 있는 배나무숲 주차 돼요?", "expect": "answer", "expect_name": "배나무숲", "expect_addr": "직산", "must_any": ["무료"], "id": "q01"}
+{"q": "천안 배나무숲 주차 어때요?", "expect": "clarify", "id": "q02"}
+{"q": "당진 빙빙반점 차 가져가도 돼요?", "expect": "answer", "expect_name": "빙빙반점", "expect_addr": "당진", "must_any": ["불가|어렵|없"], "id": "q03"}
+{"q": "부여 백제의집 갈 건데 근처 주차장 몇 시까지 해요?", "expect": "answer", "expect_name": "백제의집", "expect_addr": "부여", "must_any": ["19:00|19시|오후 7시"], "id": "q04"}
+{"q": "천안 동남구 서부대로에 있는 에그드랍 주차장 있어요?", "expect": "answer", "expect_name": "에그드랍", "expect_addr": "서부대로", "must_any": ["매장.{0,6}확인|확인.{0,6}필요"], "id": "q05"}
+{"q": "아산 다담삼계탕 주차 어디에 해요?", "expect": "answer", "expect_name": "다담삼계탕", "expect_addr": "아산", "must_any": ["없"], "id": "q06"}
+{"q": "뚜레쥬르 아산모종점 주차장 있나요?", "expect": "answer", "expect_name": "뚜레쥬르 아산모종점", "expect_addr": "아산", "must_any": ["추정|가능성"], "id": "q07"}
+{"q": "서천 장항횟집 주차 가능해요?", "expect": "answer", "expect_name": "장항횟집", "expect_addr": "서천", "must_any": ["추정|가능성|확인"], "must_not": ["주차 가능합니다"], "id": "q08"}
+{"q": "천안 정든포차 근처 공영주차장 요금 알려줘", "expect": "answer", "expect_name": "정든포차", "expect_addr": "천안", "must_any": ["\\d+원|무료"], "id": "q09"}
+{"q": "천안 맘스터치 주차 돼요?", "expect": "clarify", "id": "q10"}
+{"q": "가나다라없는식당 주차 정보 알려줘", "expect": "not_found", "must_any": ["찾지 못|찾을 수 없|없습니다|없어요"], "id": "q11"}
+{"q": "직산 배나무숲에서 주차권 등록은 어떻게 해요?", "expect": "answer", "expect_name": "배나무숲", "expect_addr": "직산", "must_any": ["매장.{0,8}확인|데이터에 없|정보가 없"], "must_not": ["카운터|차량번호"], "id": "q12"}
+{"q": "서울 강남역 근처 주차장 알려줘", "expect": "out_of_scope", "must_any": ["충남|충청남도|어렵|할 수 없|드릴 수 없"], "id": "q13"}
+{"q": "천안 정든포차에서 제일 가까운 주차장까지 걸어서 몇 분이에요?", "expect": "answer", "expect_name": "정든포차", "expect_addr": "천안", "must_any": ["약 ?\\d+ ?분|\\d+분 정도"], "id": "q14"}
+{"q": "에그드랍 신불당점 지금 주차 자리 남았어요?", "expect": "answer", "expect_name": "에그드랍 신불당점", "expect_addr": "불당", "must_any": ["실시간|확인"], "id": "q15"}
+{"q": "스타벅스 공주신관 주차 정보", "expect": "answer", "expect_name": "스타벅스 공주신관", "expect_addr": "공주", "id": "q16"}
+{"q": "직산 배나무숲 근처에 명절에만 여는 주차장도 있어요?", "expect": "answer", "expect_name": "배나무숲", "expect_addr": "직산", "must_any": ["명절|추석"], "id": "q17"}
+{"q": "예산 홍북식당 갈 때 주차 어디에 하면 돼요?", "expect": "answer", "expect_name": "홍북식당", "expect_addr": "예산군", "random": true, "id": "q18"}
+{"q": "당진 산단밥집 갈 때 주차 어디에 하면 돼요?", "expect": "answer", "expect_name": "산단밥집", "expect_addr": "당진시", "random": true, "id": "q19"}
+{"q": "천안 더테라스 갈 때 주차 어디에 하면 돼요?", "expect": "answer", "expect_name": "더테라스", "expect_addr": "천안시", "random": true, "id": "q20"}
+{"q": "예산 제주오겹살식당 갈 때 주차 어디에 하면 돼요?", "expect": "answer", "expect_name": "제주오겹살식당", "expect_addr": "예산군", "random": true, "id": "q21"}
+{"q": "천안 심쿵회수산 갈 때 주차 어디에 하면 돼요?", "expect": "answer", "expect_name": "심쿵회수산", "expect_addr": "천안시", "random": true, "id": "q22"}
+{"q": "천안 선궁노래클럽 갈 때 주차 어디에 하면 돼요?", "expect": "answer", "expect_name": "선궁노래클럽", "expect_addr": "천안시", "random": true, "id": "q23"}
+{"q": "보령 대천칼국수 갈 때 주차 어디에 하면 돼요?", "expect": "answer", "expect_name": "대천칼국수", "expect_addr": "보령시", "random": true, "id": "q24"}
+{"q": "금산 이화수전통육개장 갈 때 주차 어디에 하면 돼요?", "expect": "answer", "expect_name": "이화수전통육개장", "expect_addr": "금산군", "random": true, "id": "q25"}

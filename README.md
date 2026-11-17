@@ -92,6 +92,20 @@ python tools/train_parking_lgbm.py --data data/bundle_cn --out out/cv_2421_cn \
 
 기계식 예측은 절대 수준이 낮아 화면에 쓰지 않습니다. 법정동 단위로 나누면 성능이 떨어집니다(AUC 0.733). 자세한 수치는 `results/*.json`.
 
+## 주차 비서 (LLM + 도구 호출)
+
+`assistant/`: 사용자가 "천안 ○○ 주차 돼요?"처럼 물으면 LLM이 `search_places` → `get_parking` 도구로 카드 데이터를 찾아 답합니다.
+LLM은 OpenAI 호환 API면 무엇이든 되고, `.env`의 `LLM_BASE_URL`·`LLM_API_KEY`·`LLM_MODEL`로만 바꿉니다(개발 중엔 랩 서버, 데모는 OpenRouter 무료 모델 예정).
+
+- 프롬프트 규칙: 도구 결과에 없는 것(주차권 처리, 할인 조건, 실시간 빈자리)은 지어내지 않고 매장 확인을 안내, 추정값은 추정이라고 밝힘, 같은 이름이 여러 곳이면 지점을 되물음, 운영시간 경고는 반드시 전달.
+- 평가: `assistant/eval_questions.jsonl` 25문항(경우별 17 + 무작위 매장 8). 맞는 매장을 조회했는지, 되묻기·없음 처리, 필수/금지 표현을 규칙으로 채점합니다.
+
+```bash
+python assistant/agent.py "천안 직산 배나무숲 주차 돼요?"
+python assistant/run_eval.py --limit 5 --sleep 2     # 결과 out/assistant_eval/
+python assistant/make_eval.py                        # 질문셋 재생성(고정 시드)
+```
+
 ## 못 하는 것
 
 - 건물 내부 도보 동선, 주차권 처리 방법, 매장별 무료 조건: 공개 데이터에 없습니다(`validationInstructions`, `benefitDescription`, `walkingSteps`는 비어 있음).
