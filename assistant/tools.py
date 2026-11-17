@@ -49,6 +49,34 @@ class CardStore:
         return {"total_matches": len(hits), "items": items,
                 "note": "결과가 여러 곳이면 사용자에게 지점을 확인하세요." if len(hits) > 1 else None}
 
+    def search(self, query: str, limit: int = 20) -> tuple[int, list[dict]]:
+        """API용 검색(GET /places): 시·군 이름은 주소 필터, 나머지는 매장명(우선)·업종에 부분 일치.
+        "천안"만 오면 천안 매장 전체가 대상. 반환: (전체 일치 수, Place 목록 limit개)."""
+        regions = [r for r in REGIONS if r in query]
+        rest = query
+        for r in regions:
+            rest = rest.replace(r + "시", "").replace(r + "군", "").replace(r, "")
+        nq = _norm(rest)
+        hits = []
+        for pid, name, addr in self._index:
+            if regions and not any(r in addr for r in regions):
+                continue
+            if not nq:  # 지역만 온 경우: 주차 정보가 확인된 매장을 앞에
+                score = {"available": 0, "unavailable": 1}.get(self.rows[pid]["place"]["parkingStatus"], 2)
+            elif nq == name:
+                score = 0
+            elif name.startswith(nq):
+                score = 1
+            elif nq in name:
+                score = 2
+            elif nq in _norm(self.rows[pid]["place"]["category"]):
+                score = 3
+            else:
+                continue
+            hits.append((score, len(name), pid))
+        hits.sort()
+        return len(hits), [self.rows[pid]["place"] for _, _, pid in hits[:limit]]
+
     def _match(self, nq: str, region: str | None) -> list[tuple[int, int, str]]:
         hits = []
         for pid, name, addr in self._index:

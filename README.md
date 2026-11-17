@@ -92,6 +92,26 @@ python tools/train_parking_lgbm.py --data data/bundle_cn --out out/cv_2421_cn \
 
 기계식 예측은 절대 수준이 낮아 화면에 쓰지 않습니다. 법정동 단위로 나누면 성능이 떨어집니다(AUC 0.733). 자세한 수치는 `results/*.json`.
 
+## API 서버
+
+`server/app.py`(FastAPI): 프론트 `docs/API.md` v0.1 계약을 그대로 서빙하고 주차 비서 채팅을 붙였습니다.
+
+| Method | URL | 설명 |
+| --- | --- | --- |
+| GET | `/places?query=천안 빙빙반점&limit=20` | 검색. 시·군 이름은 주소 필터, 나머지는 매장명·업종. 빈 검색은 빈 결과 |
+| GET | `/places/{placeId}/parking` | 목적지 주차 상세(API v0.1 응답 그대로). 없으면 404 `PLACE_NOT_FOUND` |
+| POST | `/assistant/chat` | `{"message": "...", "history": [{"role": "user", "content": "..."}]}` → `{answer, toolCalls, model}`. LLM 미설정·장애면 503 |
+| GET | `/health` | 매장 수, 출처 기준일 |
+
+```bash
+python tools/build_parking_cards.py                 # data/cards/place_parking_cn.jsonl (또는 Releases에서 받기)
+uvicorn server.app:app --port 8000                  # 기동 약 1초, 메모리 약 400MB
+python -m pytest -q tests                           # 계약 테스트 9개(샘플 8곳으로)
+```
+
+프론트는 `VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev`로 붙습니다(2026-11-17 확인: 검색 → 상세 → 요금·운영시간·입구 안내 표시).
+CORS 허용 출처는 `ALLOWED_ORIGINS`(쉼표 구분, 기본 `localhost:5173`).
+
 ## 주차 비서 (LLM + 도구 호출)
 
 `assistant/`: 사용자가 "천안 ○○ 주차 돼요?"처럼 물으면 LLM이 `search_places` → `get_parking` 도구로 카드 데이터를 찾아 답합니다.

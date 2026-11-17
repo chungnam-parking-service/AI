@@ -50,6 +50,17 @@ ENTRANCE_LABEL = {
 }
 
 
+def entrance_guide(source: str | None) -> str | None:
+    """입구 좌표의 근거를 운전자용 문구로. 현장 확인한 입구는 없으므로 모두 확인 필요를 밝힌다."""
+    if not source:
+        return None
+    if "입구 미확인" in source:
+        return "입구 위치를 확인하지 못했어요. 주차장 위치로 안내하니 도착 후 입구를 확인해 주세요."
+    if "입구 표시" in source:
+        return "지도(OSM)에 표시된 주차장 입구로 안내해요. 현장과 다를 수 있어요."
+    return "도로와 주차장이 만나는 지점을 입구로 추정해 안내해요. 현장과 다를 수 있어요."
+
+
 def haversine_m(lat1, lon1, lat2, lon2) -> np.ndarray:
     p1, p2 = np.radians(lat1), np.radians(lat2)
     a = np.sin((p2 - p1) / 2) ** 2 + np.cos(p1) * np.cos(p2) * np.sin(np.radians(lon2 - lon1) / 2) ** 2
@@ -271,7 +282,7 @@ def load_holiday_lots(data: Path) -> pd.DataFrame:
     h = h[h["주소"].str.match(r"^(?:충남|충청남도)")].drop_duplicates(["자원명", "위도", "경도"])
     days = h[["휴일_1_개방일", "휴일_4_개방일"]].agg(lambda r: f"{r.iloc[0]}~{r.iloc[1]}", axis=1)
     return pd.DataFrame({
-        "lot_id": "hol-" + h.index.astype(str), "name": h["자원명"], "type": h["주차장유형"],
+        "lot_id": "hol-" + h.index.astype(str), "name": h["자원명"] + " (명절에만 개방)", "type": h["주차장유형"],
         "fee": h["요금정책"], "fee_desc": h["요금정책"].replace("", None), "fee_note": None,
         "hours_desc": None, "close_min": None, "address": h["주소"], "spaces": np.nan, "phone": None,
         "access": "", "holiday_only": True, "open_info": h["명절구분"] + " " + days + " " + h["휴일_1_개방시간"],
@@ -436,7 +447,7 @@ def to_api(r: dict, lots: list[dict], primary_ent: dict | None) -> dict:
                     "entranceCoordinates": None if primary_ent is None else
                     {"latitude": primary_ent["lat"], "longitude": primary_ent["lon"]},
                     "entranceSource": None if primary_ent is None else primary_ent["source"],
-                    "entrancePhotoUrl": None, "entranceGuide": None,
+                    "entrancePhotoUrl": None, "entranceGuide": None if primary_ent is None else entrance_guide(primary_ent["source"]),
                     "feeDescription": "무료(매장 정보)" if r["summary_store"] == "주차 가능·무료" else None,
                     "hoursDescription": None,
                     "verifiedAt": None},
@@ -453,7 +464,7 @@ def to_api(r: dict, lots: list[dict], primary_ent: dict | None) -> dict:
             "lot": {"id": x["lot_id"], "name": x["name"], "address": x["address"],
                     "entranceCoordinates": {"latitude": x["entrance_lat"], "longitude": x["entrance_lon"]},
                     "entranceSource": x["entrance_source"],
-                    "entrancePhotoUrl": None, "entranceGuide": None,
+                    "entrancePhotoUrl": None, "entranceGuide": entrance_guide(x["entrance_source"]),
                     "feeDescription": x["fee_desc"], "feeNote": x["fee_note"],
                     "hoursDescription": x["open_info"] if x["holiday_only"] else x["hours_desc"],
                     "verifiedAt": x["verified_at"], "source": x["source"], "holidayOnly": x["holiday_only"]},
