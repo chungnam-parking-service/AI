@@ -52,9 +52,8 @@ def assistant():
     """첫 채팅 요청 때 만든다. LLM 설정이 없으면 None."""
     global _assistant
     if _assistant is None:
-        from agent import ParkingAssistant, load_env
-        load_env()
-        if not os.environ.get("LLM_BASE_URL") or not os.environ.get("LLM_API_KEY"):
+        from agent import ParkingAssistant, llm_config
+        if llm_config() is None:
             return None
         _assistant = ParkingAssistant(store())
     return _assistant

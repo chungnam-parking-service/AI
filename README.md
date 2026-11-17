@@ -115,14 +115,19 @@ CORS 허용 출처는 `ALLOWED_ORIGINS`(쉼표 구분, 기본 `localhost:5173`).
 ## 주차 비서 (LLM + 도구 호출)
 
 `assistant/`: 사용자가 "천안 ○○ 주차 돼요?"처럼 물으면 LLM이 `search_places` → `get_parking` 도구로 카드 데이터를 찾아 답합니다.
-LLM은 OpenAI 호환 API면 무엇이든 되고, `.env`의 `LLM_BASE_URL`·`LLM_API_KEY`·`LLM_MODEL`로만 바꿉니다(개발 중엔 랩 서버, 데모는 OpenRouter 무료 모델 예정).
+LLM은 `.env`의 `LLM_PROVIDER`로 고릅니다.
+
+- `openrouter`(기본, 데모용): `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`(기본 `nvidia/nemotron-3-ultra-550b-a55b:free`), `OPENROUTER_FALLBACK_MODELS`(앞 모델이 429·장애일 때 OpenRouter가 넘길 모델). **`:free`가 아닌 모델은 코드에서 거부**합니다(과금 방지). 크레딧 없는 무료 계정은 하루 요청 수 제한이 있고, 질문 하나에 요청 2~3번이 듭니다.
+- `lab`(개발용): 연구실 OpenAI 호환 서버(`LLM_BASE_URL`·`LLM_API_KEY`·`LLM_MODEL`). tailnet 안에서만 닿아 데모에는 쓰지 않습니다.
 
 - 프롬프트 규칙: 도구 결과에 없는 것(주차권 처리, 할인 조건, 실시간 빈자리)은 지어내지 않고 매장 확인을 안내, 추정값은 추정이라고 밝힘, 같은 이름이 여러 곳이면 지점을 되물음, 운영시간 경고는 반드시 전달.
 - 평가: `assistant/eval_questions.jsonl` 25문항(경우별 17 + 무작위 매장 8). 맞는 매장을 조회했는지, 되묻기·없음 처리, 필수/금지 표현을 규칙으로 채점합니다.
 
-- 결과(2026-11-17, 랩 서버 `qwen3.8-27b`, thinking 끔, temperature 0.2): **24/25 통과, 2회 반복 동일**. 응답 1~2초.
+- 결과(2026-11-17, temperature 0.2)
+  - OpenRouter `nemotron-3-ultra-550b-a55b:free`: 6문항(q01·q02·q06·q10·q11·q12) **6/6 통과**, 응답 4~16초. 무료 한도 때문에 25문항 전체는 아직 안 돌렸습니다. 사용 금액 0.
+  - 랩 `qwen3.8-27b`(thinking 끔): **24/25 통과, 2회 반복 동일**. 응답 1~2초.
   유일한 실패 q12("주차권 등록은 어떻게 해요?")는 도구를 부르지 않고 "데이터에 없어 매장 확인 필요"라고만 답한 경우로, 내용은 맞지만 채점 기준(매장 조회 필수)에 걸렸습니다. 채점 기준은 그대로 둡니다.
-  답 25개를 사람이 읽어 확인한 범위에서 데이터에 없는 요금·조건을 지어낸 답은 없었습니다. 랩 서버는 개발 전용이고 데모는 OpenRouter로 바꿔 다시 평가해야 합니다.
+  답 25개를 사람이 읽어 확인한 범위에서 데이터에 없는 요금·조건을 지어낸 답은 없었습니다.
 
 ```bash
 python assistant/agent.py "천안 직산 배나무숲 주차 돼요?"

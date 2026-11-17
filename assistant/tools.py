@@ -116,6 +116,7 @@ class CardStore:
             lot = o["lot"]
             out["own_parking"].append({
                 "name": lot["name"], "relationship": o["relationship"], "evidence": o.get("evidence"),
+                "evidence_source": "TourAPI 매장 정보" if o["relationship"] == "dedicated" else "건축물대장 또는 LightGBM 추정",
                 "fee": lot["feeDescription"],
                 "entrance": lot["entranceCoordinates"], "entrance_source": lot.get("entranceSource")})
         for o in r["alternatives"]:

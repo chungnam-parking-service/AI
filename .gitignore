@@ -5,3 +5,4 @@ data/
 out/
 HANDOFF.md
 .claude/
+.env.bak-*
