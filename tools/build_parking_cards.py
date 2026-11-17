@@ -42,6 +42,7 @@ SOURCE_DATES = {
     "전국주차장정보표준데이터": "2026-11-16 조회(기준일 2026)",
     "OSM 주차장": "2026-11-16 조회",
     "명절 개방 주차장": "2026 추석",
+    "천안시 주차장 현황": "공공데이터 15110970(기준일 미표기)",
 }
 ENTRANCE_LABEL = {
     "pe": "OSM 주차장 입구 표시",
@@ -277,6 +278,27 @@ def load_osm_lots(data: Path, include_private: bool = False) -> pd.DataFrame:
         "osm_key": o["osm_type"] + "-" + o["osm_id"]})
 
 
+def load_cheonan_lots(data: Path, pub: pd.DataFrame) -> pd.DataFrame:
+    """천안시 주차장 현황(15110970) 중 표준데이터에 없는 곳만(이름이 다르고 50m 밖). 요금은 유료/무료 구분뿐."""
+    path = data / "bundle/public_lots_cheonan.csv"
+    if not path.exists():
+        return pub.iloc[0:0]
+    c = pd.read_csv(path, dtype=str)
+    lat, lon = pd.to_numeric(c["위도"], errors="coerce"), pd.to_numeric(c["경도"], errors="coerce")
+    d, _ = BallTree(np.radians(pub[["lat", "lon"]].to_numpy()), metric="haversine").query(
+        np.radians(np.c_[lat, lon]), k=1)
+    known = set(pub["name"].str.replace(" ", ""))
+    keep = (d[:, 0] * EARTH_M >= 50) & ~c["주차장명"].str.replace(" ", "").isin(known)
+    c, lat, lon = c[keep], lat[keep], lon[keep]
+    return pd.DataFrame({
+        "lot_id": "cheonan-" + c.index.astype(str), "name": c["주차장명"].str.strip(), "type": "",
+        "fee": c["구분"], "fee_desc": c["구분"].where(c["구분"] == "무료", "유료(요금 상세 없음)"), "fee_note": None,
+        "hours_desc": None, "close_min": None, "address": c["주소"],
+        "spaces": pd.to_numeric(c["총면수"].str.replace(",", ""), errors="coerce"), "phone": None, "access": "",
+        "holiday_only": False, "open_info": "", "source": "천안시 주차장 현황", "verified_at": None,
+        "coord_source": "원본", "lat": lat, "lon": lon, "osm_key": ""})
+
+
 def load_holiday_lots(data: Path) -> pd.DataFrame:
     h = pd.read_csv(data / "bundle_cn/holiday_open_lots.csv", dtype=str).fillna("")
     h = h[h["주소"].str.match(r"^(?:충남|충청남도)")].drop_duplicates(["자원명", "위도", "경도"])
@@ -334,6 +356,9 @@ def pick_entrance(cands: list, lot_lat: float, lot_lon: float, s_lat: float, s_l
 
 def build_lots(data: Path, junction: dict, pe: np.ndarray) -> pd.DataFrame:
     pub, osm, hol = load_public_lots(data), load_osm_lots(data), load_holiday_lots(data)
+    cheonan = load_cheonan_lots(data, pub)
+    print(f"천안시 주차장 현황에서 추가 {len(cheonan)}곳")
+    pub = pd.concat([pub, cheonan], ignore_index=True)
     # 공공데이터와 겹치는 OSM 주차장은 빼고, 그 OSM 면의 입구 정보는 공공데이터 주차장이 물려받는다
     tree = BallTree(np.radians(pub[["lat", "lon"]].to_numpy()), metric="haversine")
     dist, idx = tree.query(np.radians(osm[["lat", "lon"]].to_numpy()), k=1)
