@@ -107,11 +107,26 @@ python tools/train_parking_lgbm.py --data data/bundle_cn --out out/cv_2421_cn \
 ```bash
 python tools/build_parking_cards.py                 # data/cards/place_parking_cn.jsonl (또는 Releases에서 받기)
 uvicorn server.app:app --port 8000                  # 기동 약 1초, 메모리 약 400MB
-python -m pytest -q tests                           # 계약 테스트 9개(샘플 8곳으로)
+python -m pytest -q tests                           # 계약·점주·피드백 테스트 17개(샘플 8곳으로)
 ```
 
 프론트는 `VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev`로 붙습니다(2026-11-17 확인: 검색 → 상세 → 요금·운영시간·입구 안내 표시).
 CORS 허용 출처는 `ALLOWED_ORIGINS`(쉼표 구분, 기본 `localhost:5173`).
+
+## 점주 입력 · 정확도 피드백
+
+공개 데이터에 없는 매장 주차 방식(자체·제휴·불가), 할인·무료 조건, 주차 등록·정산 방법, 입구 안내를 점주가 채웁니다.
+저장하면 상세 응답(`primaryParking`)·검색 요약·주차 비서 답에 바로 반영되고 `ownerVerified: true`, `verifiedAt`(입력 시각), 요약 끝 "점주 확인"이 붙습니다. 주변 주차장은 그대로 둡니다.
+
+- 사업자 인증은 하지 않습니다. 관리자가 매장별 점주 키를 발급하고(`POST /admin/owner-keys`, 헤더 `X-Admin-Key`), 점주는 그 키(`X-Owner-Key`)로 자기 매장만 고칠 수 있습니다. DB에는 키 해시만 저장합니다.
+- 데모용 입력 페이지: `http://127.0.0.1:8000/owner` (매장 검색 → 점주 키 → 입력·저장·되돌리기).
+- 정확도 피드백: `POST /parking-lots/{lotId}/feedback {"placeId", "accurate", "comment"}`, 같은 사람·같은 주차장은 1시간에 한 번(429). 집계 `GET /parking-lots/{lotId}/feedback`, 최근 목록 `GET /admin/feedback`.
+- 저장소는 SQLite(`OWNER_DB`, 기본 `data/owner.db`). 서버를 여러 대 띄우면 공유 DB가 필요합니다.
+
+```bash
+curl -X POST http://127.0.0.1:8000/admin/owner-keys -H "X-Admin-Key: $ADMIN_API_KEY" \
+  -H 'Content-Type: application/json' -d '{"placeId": "sangga-..."}'
+```
 
 ## 주차 비서 (LLM + 도구 호출)
 
@@ -138,6 +153,6 @@ python assistant/make_eval.py                        # 질문셋 재생성(고�
 
 ## 못 하는 것
 
-- 건물 내부 도보 동선, 주차권 처리 방법, 매장별 무료 조건: 공개 데이터에 없습니다(`validationInstructions`, `benefitDescription`, `walkingSteps`는 비어 있음).
+- 건물 내부 도보 동선, 주차권 처리 방법, 매장별 무료 조건: 공개 데이터에 없어 점주가 입력한 매장만 채워집니다.
 - 실제 입구 사진: 수집하지 않습니다(`entrancePhotoUrl: null`).
 - 민영 주차장 요금: 표준데이터의 충남 주차장은 거의 전부 공영입니다(민영 2곳).

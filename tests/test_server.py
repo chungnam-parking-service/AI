@@ -1,18 +1,10 @@
 """API 계약 테스트: 샘플 카드 8곳으로 서버를 띄워 frontend docs/API.md v0.1 모양을 확인한다."""
-import os
-import sys
-from pathlib import Path
 from types import SimpleNamespace as NS
 
 import pytest
+from fastapi.testclient import TestClient
 
-ROOT = Path(__file__).resolve().parent.parent
-os.environ["CARDS_PATH"] = str(ROOT / "samples/place_parking_sample.jsonl")
-sys.path.insert(0, str(ROOT))
-
-from fastapi.testclient import TestClient  # noqa: E402
-
-import server.app as srv  # noqa: E402
+import server.app as srv
 
 PLACE_KEYS = {"id", "name", "category", "address", "coordinates", "parkingStatus", "parkingSummary"}
 LOT_KEYS = {"id", "name", "address", "entranceCoordinates", "entrancePhotoUrl", "entranceGuide",

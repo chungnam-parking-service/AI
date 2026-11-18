@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>점주 주차 정보 입력</title>
+<style>
+  :root { --bg:#f6f7f5; --card:#fff; --ink:#1d2420; --muted:#5f6b64; --line:#dfe4e0; --accent:#2f6b4f; --warn:#a4462b; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.55 system-ui,-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif; }
+  main { max-width:640px; margin:0 auto; padding:24px 16px 64px; }
+  h1 { font-size:1.4rem; margin:0 0 4px; }
+  p.lead { color:var(--muted); margin:0 0 20px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px; }
+  h2 { font-size:1rem; margin:0 0 12px; }
+  label { display:block; font-weight:600; font-size:.92rem; margin:12px 0 4px; }
+  small { color:var(--muted); font-weight:400; }
+  input, textarea, select { width:100%; padding:10px; border:1px solid var(--line); border-radius:8px; font:inherit; background:#fff; }
+  textarea { min-height:72px; resize:vertical; }
+  .row { display:flex; gap:8px; }
+  .row > * { flex:1; }
+  button { padding:10px 14px; border:0; border-radius:8px; background:var(--accent); color:#fff; font:inherit; font-weight:600; cursor:pointer; }
+  button.ghost { background:#fff; color:var(--accent); border:1px solid var(--accent); }
+  button:disabled { opacity:.5; cursor:default; }
+  ul.results { list-style:none; padding:0; margin:8px 0 0; }
+  ul.results li { padding:10px; border:1px solid var(--line); border-radius:8px; margin-top:6px; cursor:pointer; }
+  ul.results li:hover, ul.results li.on { border-color:var(--accent); background:#eef5f1; }
+  .muted { color:var(--muted); font-size:.9rem; }
+  .msg { margin-top:12px; font-size:.92rem; }
+  .msg.err { color:var(--warn); }
+  .msg.ok { color:var(--accent); }
+  .hidden { display:none; }
+  pre { white-space:pre-wrap; background:#f1f3f2; padding:10px; border-radius:8px; font-size:.85rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>점주 주차 정보 입력</h1>
+  <p class="lead">공개 데이터에 없는 매장 주차 방법을 직접 알려 주세요. 저장하면 매장 상세 화면과 주차 비서 답변에 "점주 확인"으로 표시됩니다.</p>
+
+  <section>
+    <h2>1. 매장 찾기</h2>
+    <div class="row"><input id="q" placeholder="예: 천안 정든포차" autocomplete="off"><button id="find" style="flex:0 0 auto">검색</button></div>
+    <ul class="results" id="results"></ul>
+  </section>
+
+  <section id="keyBox" class="hidden">
+    <h2>2. 점주 키 확인</h2>
+    <p class="muted" id="chosen"></p>
+    <label for="key">점주 키 <small>관리자에게 받은 키</small></label>
+    <div class="row"><input id="key" type="password" autocomplete="off"><button id="load" style="flex:0 0 auto">불러오기</button></div>
+    <div class="msg" id="keyMsg"></div>
+  </section>
+
+  <form id="form" class="hidden">
+    <section>
+      <h2>3. 주차 정보</h2>
+      <label for="mode">매장 주차 방식</label>
+      <select id="mode">
+        <option value="own">매장(건물) 주차장 있음</option>
+        <option value="partner">제휴 주차장 이용</option>
+        <option value="none">주차 불가</option>
+      </select>
+      <div id="lotFields">
+        <label for="lotName">주차장 이름 <small>제휴 주차장이면 필수</small></label>
+        <input id="lotName" maxlength="60">
+        <label for="lotAddress">주차장 주소 <small>매장과 다를 때만</small></label>
+        <input id="lotAddress" maxlength="120">
+        <label for="benefit">할인·무료 조건 <small>예: 1만 원 이상 결제 시 2시간 무료</small></label>
+        <textarea id="benefit" maxlength="200"></textarea>
+        <label for="validate">주차 등록·정산 방법 <small>예: 계산할 때 차량번호 뒤 4자리를 알려주세요</small></label>
+        <textarea id="validate" maxlength="300"></textarea>
+        <label for="guide">입구 안내 <small>예: 건물 뒤편 골목, 지하 1층 입구</small></label>
+        <textarea id="guide" maxlength="300"></textarea>
+        <label for="fee">요금 <small>조건 밖 요금</small></label>
+        <input id="fee" maxlength="200">
+        <label for="hours">주차장 운영시간</label>
+        <input id="hours" maxlength="100">
+        <div class="row">
+          <div><label for="lat">입구 위도 <small>선택</small></label><input id="lat" inputmode="decimal"></div>
+          <div><label for="lon">입구 경도</label><input id="lon" inputmode="decimal"></div>
+        </div>
+        <label for="walk">주차 후 매장까지 도보(분)</label>
+        <input id="walk" type="number" min="0" max="60">
+      </div>
+      <div class="row" style="margin-top:16px">
+        <button type="submit" id="save">저장</button>
+        <button type="button" class="ghost" id="reset">공개 데이터로 되돌리기</button>
+      </div>
+      <div class="msg" id="saveMsg"></div>
+    </section>
+    <section>
+      <h2>반영 결과</h2>
+      <pre id="preview" class="muted">저장하면 여기에 화면에 보일 요약이 나옵니다.</pre>
+    </section>
+  </form>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let placeId = null;
+
+function setMsg(el, text, kind) { el.textContent = text; el.className = 'msg ' + (kind || ''); }
+function headers() { return { 'Content-Type': 'application/json', 'X-Owner-Key': $('key').value.trim() }; }
+
+$('find').onclick = async () => {
+  const q = $('q').value.trim();
+  $('results').replaceChildren();
+  if (!q) return;
+  const res = await fetch('/places?limit=10&query=' + encodeURIComponent(q));
+  const body = await res.json();
+  if (!body.items.length) { const li = document.createElement('li'); li.textContent = '검색 결과가 없어요.'; $('results').append(li); return; }
+  for (const p of body.items) {
+    const li = document.createElement('li');
+    const strong = document.createElement('strong'); strong.textContent = p.name;
+    const div = document.createElement('div'); div.className = 'muted'; div.textContent = p.address + ' · ' + p.parkingSummary;
+    li.append(strong, div);
+    li.onclick = () => {
+      document.querySelectorAll('#results li').forEach(x => x.classList.remove('on'));
+      li.classList.add('on'); placeId = p.id;
+      $('chosen').textContent = p.name + ' — ' + p.address;
+      $('keyBox').classList.remove('hidden'); $('form').classList.add('hidden');
+    };
+    $('results').append(li);
+  }
+};
+$('q').addEventListener('keydown', e => { if (e.key === 'Enter') $('find').click(); });
+
+function fill(e) {
+  e = e || {};
+  $('mode').value = e.parkingMode || 'own';
+  $('lotName').value = e.lotName || ''; $('lotAddress').value = e.lotAddress || '';
+  $('benefit').value = e.benefitDescription || ''; $('validate').value = e.validationInstructions || '';
+  $('guide').value = e.entranceGuide || ''; $('fee').value = e.feeDescription || ''; $('hours').value = e.lotHours || '';
+  $('lat').value = e.entranceCoordinates ? e.entranceCoordinates.latitude : '';
+  $('lon').value = e.entranceCoordinates ? e.entranceCoordinates.longitude : '';
+  $('walk').value = e.walkingMinutes ?? '';
+  toggle();
+}
+function toggle() { $('lotFields').classList.toggle('hidden', $('mode').value === 'none'); }
+$('mode').onchange = toggle;
+
+$('load').onclick = async () => {
+  if (!placeId) return;
+  const res = await fetch('/owner/places/' + encodeURIComponent(placeId), { headers: headers() });
+  const body = await res.json();
+  if (!res.ok) { setMsg($('keyMsg'), body.message || '불러오지 못했어요.', 'err'); return; }
+  setMsg($('keyMsg'), body.entry ? '저장된 입력을 불러왔어요. (' + body.entry.updatedAt.slice(0, 10) + ')' : '아직 입력이 없어요. 새로 입력해 주세요.', 'ok');
+  fill(body.entry); $('form').classList.remove('hidden');
+};
+
+function preview(d) {
+  const lines = [d.place.parkingSummary];
+  for (const o of d.primaryParking) {
+    lines.push('', o.lot.name);
+    if (o.benefitDescription) lines.push('혜택: ' + o.benefitDescription);
+    if (o.validationInstructions) lines.push('정산: ' + o.validationInstructions);
+    if (o.lot.entranceGuide) lines.push('입구: ' + o.lot.entranceGuide);
+  }
+  lines.push('', '주변 주차장 ' + d.alternatives.length + '곳은 그대로 안내됩니다.');
+  $('preview').textContent = lines.join('\n');
+}
+
+$('form').onsubmit = async ev => {
+  ev.preventDefault();
+  const num = v => v.trim() === '' ? null : Number(v);
+  const lat = num($('lat').value), lon = num($('lon').value);
+  const body = {
+    parkingMode: $('mode').value, lotName: $('lotName').value, lotAddress: $('lotAddress').value,
+    benefitDescription: $('benefit').value, validationInstructions: $('validate').value,
+    entranceGuide: $('guide').value, feeDescription: $('fee').value, lotHours: $('hours').value,
+    entranceCoordinates: lat !== null && lon !== null ? { latitude: lat, longitude: lon } : null,
+    walkingMinutes: num($('walk').value),
+  };
+  $('save').disabled = true;
+  try {
+    const res = await fetch('/owner/places/' + encodeURIComponent(placeId), { method: 'PUT', headers: headers(), body: JSON.stringify(body) });
+    const d = await res.json();
+    if (!res.ok) {
+      const detail = Array.isArray(d.detail) ? d.detail.map(x => x.msg).join(', ') : (d.message || '저장하지 못했어요.');
+      setMsg($('saveMsg'), detail, 'err'); return;
+    }
+    setMsg($('saveMsg'), '저장했어요. 매장 상세와 주차 비서에 바로 반영됩니다.', 'ok'); preview(d);
+  } finally { $('save').disabled = false; }
+};
+
+$('reset').onclick = async () => {
+  const res = await fetch('/owner/places/' + encodeURIComponent(placeId), { method: 'DELETE', headers: headers() });
+  const d = await res.json();
+  if (!res.ok) { setMsg($('saveMsg'), d.message || '되돌리지 못했어요.', 'err'); return; }
+  setMsg($('saveMsg'), d.deleted ? '점주 입력을 지웠어요. 공개 데이터 기준으로 안내됩니다.' : '지울 입력이 없어요.', 'ok');
+  fill(null); $('preview').textContent = '저장하면 여기에 화면에 보일 요약이 나옵니다.';
+};
+</script>
+</body>
+</html>

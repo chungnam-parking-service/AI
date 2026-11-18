@@ -38,7 +38,8 @@ SYSTEM_PROMPT = """너는 충남 음식점 방문 운전자를 돕는 주차 안
 6. 주변 주차장을 권할 때는 가까운 순으로 최대 2곳, 이름·거리·요금·운영시간을 말한다. holiday_only=true 주차장은 명절에만 열린다고 밝힌다. 요금이 null이면 "요금 정보 없음"이라고 한다.
 7. hours_warning이나 operating_hours_warning이 있으면 꼭 전한다.
 8. 답 끝에 한 줄로 데이터 기준(예: "건축물대장 2024-12, 공영주차장 2026-11 조회 기준")을 붙인다.
-9. 충남 음식점이 아닌 질문이나 도구로 답할 수 없는 질문은 할 수 없다고 짧게 말한다."""
+9. 충남 음식점이 아닌 질문이나 도구로 답할 수 없는 질문은 할 수 없다고 짧게 말한다.
+10. own_parking의 evidence_source가 '점주 입력'이면 benefit(할인·무료 조건), how_to_validate(주차 등록·정산 방법), entrance_guide를 그대로 전하고, "점주가 YYYY-MM-DD에 입력한 정보"라고 owner_verified_at 날짜를 밝힌다."""
 
 
 def load_env() -> None:

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from typing import Callable
 
 DEFAULT_DATA = Path("data/cards/place_parking_cn.jsonl")
 SOURCES = Path("data/cards/sources.json")
@@ -25,6 +26,11 @@ class CardStore:
                 self.rows[r["place"]["id"]] = r
         self._index = [(pid, _norm(r["place"]["name"]), r["place"]["address"]) for pid, r in self.rows.items()]
         self.sources = json.loads(SOURCES.read_text(encoding="utf-8")) if SOURCES.exists() else {}
+        self.overlay: Callable[[dict], dict] = lambda r: r  # 서버가 점주 입력 반영 함수로 바꿔 끼운다
+
+    def row(self, place_id: str) -> dict | None:
+        r = self.rows.get(place_id)
+        return None if r is None else self.overlay(r)
 
     # ------------------------------------------------------------ search_places
     def search_places(self, query: str, region: str | None = None) -> dict:
@@ -75,7 +81,7 @@ class CardStore:
                 continue
             hits.append((score, len(name), pid))
         hits.sort()
-        return len(hits), [self.rows[pid]["place"] for _, _, pid in hits[:limit]]
+        return len(hits), [self.row(pid)["place"] for _, _, pid in hits[:limit]]
 
     def _match(self, nq: str, region: str | None) -> list[tuple[int, int, str]]:
         hits = []
@@ -96,10 +102,11 @@ class CardStore:
 
     # ------------------------------------------------------------ get_parking
     def get_parking(self, place_id: str) -> dict:
-        r = self.rows.get(place_id)
+        r = self.row(place_id)
         if r is None:
             return {"error": f"place_id {place_id} 없음. search_places로 먼저 찾으세요."}
         p = r["place"]
+        owner = bool(r.get("ownerVerified"))
         out = {
             "place": {"place_id": p["id"], "name": p["name"], "address": p["address"], "category": p["category"]},
             "parking_status": p["parkingStatus"],
@@ -108,16 +115,21 @@ class CardStore:
             "operating_hours_warning": r["operatingHoursWarning"],
             "own_parking": [],
             "nearby_lots": [],
-            "not_available_in_data": ["주차권·주차 등록 방법", "매장 할인·무료 조건(매장 정보에 '무료'로 표시된 경우 제외)",
-                                      "건물 안 도보 동선", "실시간 빈자리"],
+            "not_available_in_data": (["건물 안 도보 동선", "실시간 빈자리"] if owner else
+                                      ["주차권·주차 등록 방법", "매장 할인·무료 조건(매장 정보에 '무료'로 표시된 경우 제외)",
+                                       "건물 안 도보 동선", "실시간 빈자리"]),
+            "owner_verified_at": r.get("ownerUpdatedAt"),
             "data_dates": self.sources,
         }
         for o in r["primaryParking"]:
             lot = o["lot"]
             out["own_parking"].append({
                 "name": lot["name"], "relationship": o["relationship"], "evidence": o.get("evidence"),
-                "evidence_source": "TourAPI 매장 정보" if o["relationship"] == "dedicated" else "건축물대장 또는 LightGBM 추정",
-                "fee": lot["feeDescription"],
+                "evidence_source": ("점주 입력" if o.get("evidence") == "점주 입력" else
+                                    "TourAPI 매장 정보" if o["relationship"] == "dedicated" else "건축물대장 또는 LightGBM 추정"),
+                "fee": lot["feeDescription"], "benefit": o.get("benefitDescription"),
+                "how_to_validate": o.get("validationInstructions"), "entrance_guide": lot.get("entranceGuide"),
+                "lot_hours": lot.get("hoursDescription"),
                 "entrance": lot["entranceCoordinates"], "entrance_source": lot.get("entranceSource")})
         for o in r["alternatives"]:
             lot = o["lot"]
