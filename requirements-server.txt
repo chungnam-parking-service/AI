@@ -1,0 +1,5 @@
+# API 서버(server/ + assistant/) 실행에만 필요한 패키지 — Dockerfile 이 쓴다
+fastapi==0.163.1
+uvicorn==0.54.0
+openai==3.52.0
+pydantic==2.14.3

@@ -113,6 +113,22 @@ python -m pytest -q tests                           # 계약·점주·피드백 
 프론트는 `VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev`로 붙습니다(2026-11-17 확인: 검색 → 상세 → 요금·운영시간·입구 안내 표시).
 CORS 허용 출처는 `ALLOWED_ORIGINS`(쉼표 구분, 기본 `localhost:5173`).
 
+### Docker
+
+빌드할 때 Release `data-2026-11-17`의 카드(`place_parking_cn.jsonl.gz`, `sources.json`)를 받아 이미지에 넣습니다. 키는 이미지에 넣지 않고(`.dockerignore`가 `.env` 제외) 실행할 때 환경변수로 줍니다.
+
+```bash
+docker build -t parking-ai .                        # 다른 데이터: --build-arg DATA_RELEASE=data-YYYY-MM-DD
+docker run --rm -p 7860:7860 \
+  -e LLM_PROVIDER=openrouter -e OPENROUTER_API_KEY=... -e OPENROUTER_MODEL=... \
+  -e OPENROUTER_FALLBACK_MODELS=... -e ADMIN_API_KEY=... -e ALLOWED_ORIGINS=https://프론트주소 \
+  parking-ai
+curl localhost:7860/health
+```
+
+이미지 약 560MB, 실행 메모리 약 430MB입니다(2026-11-19 측정). 점주 입력·피드백 SQLite(`/app/data/owner.db`)는 컨테이너 안에만 있어서 재시작하면 사라집니다.
+백엔드는 이 서버 주소를 `AI_ASSISTANT_URL`로 받아 `/assistant/chat`을 중계합니다(parking-backend PR #2).
+
 ## 점주 입력 · 정확도 피드백
 
 공개 데이터에 없는 매장 주차 방식(자체·제휴·불가), 할인·무료 조건, 주차 등록·정산 방법, 입구 안내를 점주가 채웁니다.
