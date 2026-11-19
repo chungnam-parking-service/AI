@@ -3,7 +3,7 @@
   GET  /health
   GET  /places?query=천안&limit=20          검색(Place 목록)
   GET  /places/{placeId}/parking            목적지 주차 상세(API v0.1 그대로)
-  POST /assistant/chat {message, history}   주차 비서(LLM 설정이 없으면 503)
+  POST /assistant/chat {message, history}   주차 비서(LLM 설정이 없으면 503, 요청 수 넘으면 429)
 
   점주 입력(사업자 인증 대신 관리자가 매장별 점주 키 발급)
   POST   /admin/owner-keys {placeId}          헤더 X-Admin-Key → {ownerKey} (평문은 이때만)
@@ -19,7 +19,8 @@
 
 실행: .venv/bin/uvicorn server.app:app --port 8000
 환경변수: CARDS_PATH(기본 data/cards/place_parking_cn.jsonl), OWNER_DB(기본 data/owner.db), ADMIN_API_KEY,
-         ALLOWED_ORIGINS(쉼표 구분), LLM_* (assistant/agent.py)
+         ALLOWED_ORIGINS(쉼표 구분), LLM_* (assistant/agent.py),
+         CHAT_RATE_PER_MIN(전체 분당 채팅 수, 기본 20), CHAT_RATE_PER_CLIENT(사용자별 분당, 기본 6)
 """
 from __future__ import annotations
 
@@ -32,6 +33,9 @@ from typing import Literal
 
 import hashlib
 import secrets
+import threading
+import time
+from collections import deque
 
 from fastapi import FastAPI, Header, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -98,6 +102,42 @@ def error(status: int, code: str, message: str) -> JSONResponse:
     return JSONResponse(status_code=status, content={"code": code, "message": message})
 
 
+class RateLimiter:
+    """최근 60초 요청 수로 막는다. 공개 주소라 LLM(연구실 GPU·무료 한도)을 지키려는 것.
+    백엔드가 중계하면 클라이언트가 모두 백엔드 하나로 보이므로 전체 한도가 실질적인 방어선이다."""
+
+    def __init__(self, total: int, per_client: int, window: float = 60.0):
+        self.total, self.per_client, self.window = total, per_client, window
+        self.all: deque[float] = deque()
+        self.by: dict[str, deque[float]] = {}
+        self.lock = threading.Lock()
+
+    def allow(self, client: str, now: float | None = None) -> bool:
+        now = time.monotonic() if now is None else now
+        with self.lock:
+            for q in (self.all, self.by.setdefault(client, deque())):
+                while q and q[0] <= now - self.window:
+                    q.popleft()
+            if len(self.all) >= self.total or len(self.by[client]) >= self.per_client:
+                return False
+            self.all.append(now)
+            self.by[client].append(now)
+            if len(self.by) > 10_000:  # 오래된 사용자 기록 정리
+                self.by = {k: v for k, v in self.by.items() if v}
+            return True
+
+
+@lru_cache(maxsize=1)
+def chat_limiter() -> RateLimiter:
+    return RateLimiter(int(os.environ.get("CHAT_RATE_PER_MIN", "20")), int(os.environ.get("CHAT_RATE_PER_CLIENT", "6")))
+
+
+def client_id(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+    host = fwd or (request.client.host if request.client else "")
+    return hashlib.sha256(f"{host}|{request.headers.get('user-agent', '')}".encode()).hexdigest()[:16]
+
+
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "places": len(store().rows), "sources": store().sources}
@@ -131,15 +171,17 @@ class ChatRequest(BaseModel):
 
 
 @app.post("/assistant/chat")
-def chat(req: ChatRequest):
+def chat(req: ChatRequest, request: Request):
     bot = assistant()
     if bot is None:
         return error(503, "ASSISTANT_UNAVAILABLE", "주차 비서가 설정되지 않았습니다.")
+    if not chat_limiter().allow(client_id(request)):
+        return error(429, "ASSISTANT_RATE_LIMITED", "질문이 많아 잠시 쉬고 있어요. 1분 뒤에 다시 물어봐 주세요.")
     try:
         out = bot.ask(req.message, [t.model_dump() for t in req.history])
-    except Exception:  # LLM 서버 장애는 일시 실패로
+    except Exception:  # 모든 LLM 연결이 실패하면 일시 실패로
         return error(503, "ASSISTANT_FAILED", "주차 비서 응답에 실패했습니다. 잠시 후 다시 시도해 주세요.")
-    return {"answer": out["answer"], "toolCalls": out["tool_calls"], "model": bot.model}
+    return {"answer": out["answer"], "toolCalls": out["tool_calls"], "model": out["model"]}
 
 
 # ---------------------------------------------------------------- 점주 입력
@@ -243,8 +285,7 @@ class FeedbackRequest(BaseModel):
 def feedback(lot_id: str, req: FeedbackRequest, request: Request):
     if lot_id not in lot_ids() and not lot_id.startswith("owner-"):
         return error(404, "LOT_NOT_FOUND", "주차장을 찾을 수 없습니다.")
-    ua = request.headers.get("user-agent", "")
-    client = hashlib.sha256(f"{request.client.host if request.client else ''}|{ua}".encode()).hexdigest()[:16]
+    client = client_id(request)
     comment = (req.comment or "").strip() or None
     if not owner_store().add_feedback(lot_id, req.placeId, req.accurate, comment, client):
         return error(429, "FEEDBACK_DUPLICATE", "같은 주차장에는 1시간에 한 번만 의견을 보낼 수 있어요.")

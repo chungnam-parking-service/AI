@@ -66,9 +66,9 @@ def main() -> None:
                 out = {"answer": "", "tool_calls": [], "elapsed_s": None, "error": repr(e)}
             g = grade(it, out, bot.store)
             n_pass += g["pass"]
-            f.write(json.dumps({**it, **out, **g, "provider": bot.provider, "model": bot.model}, ensure_ascii=False) + "\n")
+            f.write(json.dumps({**it, **out, **g}, ensure_ascii=False) + "\n")
             failed = [k for k, v in g["checks"].items() if not v]
-            print(f"{it['id']} {'PASS' if g['pass'] else 'FAIL'} {out.get('elapsed_s')}s {failed or ''} | {it['q']}",
+            print(f"{it['id']} {'PASS' if g['pass'] else 'FAIL'} {out.get('elapsed_s')}s {out.get('provider')} {failed or ''} | {it['q']}",
                   flush=True)
             time.sleep(args.sleep)
     print(f"\n{n_pass}/{len(items)} pass, {bot.provider} {bot.model} -> {path}")

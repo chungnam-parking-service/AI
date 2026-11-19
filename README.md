@@ -101,7 +101,7 @@ python tools/train_parking_lgbm.py --data data/bundle_cn --out out/cv_2421_cn \
 | --- | --- | --- |
 | GET | `/places?query=천안 빙빙반점&limit=20` | 검색. 시·군 이름은 주소 필터, 나머지는 매장명·업종. 빈 검색은 빈 결과 |
 | GET | `/places/{placeId}/parking` | 목적지 주차 상세(API v0.1 응답 그대로). 없으면 404 `PLACE_NOT_FOUND` |
-| POST | `/assistant/chat` | `{"message": "...", "history": [{"role": "user", "content": "..."}]}` → `{answer, toolCalls, model}`. LLM 미설정·장애면 503 |
+| POST | `/assistant/chat` | `{"message": "...", "history": [{"role": "user", "content": "..."}]}` → `{answer, toolCalls, model}`. LLM 미설정·장애면 503, 분당 요청 수(`CHAT_RATE_PER_MIN` 전체 20, `CHAT_RATE_PER_CLIENT` 사용자별 6)를 넘으면 429 `ASSISTANT_RATE_LIMITED` |
 | GET | `/health` | 매장 수, 출처 기준일 |
 
 ```bash
@@ -147,10 +147,10 @@ curl -X POST http://127.0.0.1:8000/admin/owner-keys -H "X-Admin-Key: $ADMIN_API_
 ## 주차 비서 (LLM + 도구 호출)
 
 `assistant/`: 사용자가 "천안 ○○ 주차 돼요?"처럼 물으면 LLM이 `search_places` → `get_parking` 도구로 카드 데이터를 찾아 답합니다.
-LLM은 `.env`의 `LLM_PROVIDER`로 고릅니다.
+LLM은 `.env`의 `LLM_PROVIDER`로 고릅니다. 쉼표로 순서를 주면(`lab,openrouter`) 앞 연결이 장애·시간 초과(`LLM_TIMEOUT`, 기본 45초)일 때 같은 질문을 다음 연결로 다시 묻습니다. 응답의 `model`은 실제로 답한 모델입니다.
 
 - `openrouter`(기본, 데모용): `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`(기본 `nvidia/nemotron-3-ultra-550b-a55b:free`), `OPENROUTER_FALLBACK_MODELS`(앞 모델이 429·장애일 때 OpenRouter가 넘길 모델). **`:free`가 아닌 모델은 코드에서 거부**합니다(과금 방지). 크레딧 없는 무료 계정은 하루 요청 수 제한이 있고, 질문 하나에 요청 2~3번이 듭니다.
-- `lab`(개발용): 연구실 OpenAI 호환 서버(`LLM_BASE_URL`·`LLM_API_KEY`·`LLM_MODEL`). tailnet 안에서만 닿아 데모에는 쓰지 않습니다.
+- `lab`: 연구실 OpenAI 호환 서버(`LLM_BASE_URL`·`LLM_API_KEY`·`LLM_MODEL`). tailnet 안에서만 닿습니다. `LLM_MODEL`이 서버에 없으면(재기동으로 이름이 바뀌면) `/models` 첫 모델로 다시 고릅니다.
 
 - 프롬프트 규칙: 도구 결과에 없는 것(주차권 처리, 할인 조건, 실시간 빈자리)은 지어내지 않고 매장 확인을 안내, 추정값은 추정이라고 밝힘, 같은 이름이 여러 곳이면 지점을 되물음, 운영시간 경고는 반드시 전달.
 - 평가: `assistant/eval_questions.jsonl` 25문항(경우별 17 + 무작위 매장 8). 맞는 매장을 조회했는지, 되묻기·없음 처리, 필수/금지 표현을 규칙으로 채점합니다.

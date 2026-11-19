@@ -67,7 +67,7 @@ def test_chat_unconfigured(client, monkeypatch):
 
 
 def test_chat_with_fake_llm(client, monkeypatch):
-    bot = NS(model="fake", ask=lambda msg, hist: {"answer": f"답:{msg}:{len(hist)}", "tool_calls": []})
+    bot = NS(ask=lambda msg, hist: {"answer": f"답:{msg}:{len(hist)}", "tool_calls": [], "model": "fake"})
     monkeypatch.setattr(srv, "assistant", lambda: bot)
     r = client.post("/assistant/chat", json={"message": "안녕", "history": [{"role": "user", "content": "x"}]})
     assert r.status_code == 200 and r.json() == {"answer": "답:안녕:1", "toolCalls": [], "model": "fake"}
@@ -76,3 +76,21 @@ def test_chat_with_fake_llm(client, monkeypatch):
 def test_chat_validation(client):
     assert client.post("/assistant/chat", json={"message": ""}).status_code == 422
     assert client.post("/assistant/chat", json={"message": "x" * 501}).status_code == 422
+
+
+def test_chat_rate_limited(client, monkeypatch):
+    bot = NS(ask=lambda msg, hist: {"answer": "ok", "tool_calls": [], "model": "fake"})
+    monkeypatch.setattr(srv, "assistant", lambda: bot)
+    monkeypatch.setattr(srv, "chat_limiter", lambda lim=srv.RateLimiter(total=5, per_client=2): lim)
+    codes = [client.post("/assistant/chat", json={"message": "안녕"}).status_code for _ in range(3)]
+    assert codes == [200, 200, 429]
+    r = client.post("/assistant/chat", json={"message": "안녕"}, headers={"X-Forwarded-For": "10.0.0.9"})
+    assert r.status_code == 200  # 다른 사용자는 아직 된다
+    assert client.post("/assistant/chat", json={"message": "x"}).json()["code"] == "ASSISTANT_RATE_LIMITED"
+
+
+def test_rate_limiter_window():
+    lim = srv.RateLimiter(total=3, per_client=2, window=60)
+    assert [lim.allow("a", t) for t in (0, 1, 2)] == [True, True, False]
+    assert lim.allow("b", 3) and not lim.allow("c", 4)  # 전체 3건 도달
+    assert lim.allow("a", 61) and lim.allow("c", 62)  # 60초 지나면 풀린다

@@ -1,14 +1,16 @@
 """충남 매장 주차 비서: OpenAI 호환 채팅 API + 도구 호출.
 
-LLM 연결은 환경변수(또는 .env)로만 바꾼다. LLM_PROVIDER 로 고른다.
-  openrouter (기본, 데모용)
+LLM 연결은 환경변수(또는 .env)로만 바꾼다. LLM_PROVIDER 에 쉼표로 순서를 주면 앞에서부터 쓰고,
+앞 연결이 장애·시간 초과면 같은 질문을 다음 연결로 다시 묻는다(예: LLM_PROVIDER=lab,openrouter).
+  openrouter (OpenRouter 무료 모델)
     OPENROUTER_API_KEY
     OPENROUTER_MODEL   반드시 ':free' 모델(유료 모델은 거부 — 과금 방지)
     OPENROUTER_FALLBACK_MODELS  쉼표 구분 ':free' 모델(선택). 앞 모델이 429·장애면 OpenRouter가 다음 모델로 넘긴다
-  lab (개발용, 연구실 OpenAI 호환 서버. tailnet 안에서만 닿는다)
+  lab (연구실 OpenAI 호환 서버. tailnet 안에서만 닿는다)
     LLM_BASE_URL, LLM_API_KEY
-    LLM_MODEL     비우면 /models 첫 번째 모델(재기동마다 이름이 바뀐다)
+    LLM_MODEL     비우거나 서버에 없으면 /models 첫 번째 모델(재기동마다 이름이 바뀐다)
     LLM_DISABLE_THINKING=1  Qwen3 계열 thinking 끄기(chat_template_kwargs)
+    LLM_TIMEOUT   초(기본 45). 넘으면 다음 연결로 넘어간다
 
 사용: python assistant/agent.py "천안 배나무숲 주차 돼?"
 """
@@ -20,7 +22,7 @@ import sys
 import time
 from pathlib import Path
 
-from openai import OpenAI
+from openai import NotFoundError, OpenAI
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from tools import TOOL_SPECS, CardStore, dispatch  # noqa: E402
@@ -55,10 +57,7 @@ def load_env() -> None:
 OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 
 
-def llm_config() -> dict | None:
-    """환경변수에서 LLM 연결을 고른다. 설정이 모자라면 None."""
-    load_env()
-    provider = os.environ.get("LLM_PROVIDER", "openrouter").strip().lower()
+def _provider_config(provider: str) -> dict | None:
     if provider == "openrouter":
         key, model = os.environ.get("OPENROUTER_API_KEY"), os.environ.get("OPENROUTER_MODEL", "").strip()
         if not key or not model:
@@ -68,7 +67,8 @@ def llm_config() -> dict | None:
             if not m.endswith(":free"):
                 raise SystemExit(f"OpenRouter 모델 {m}: ':free' 모델만 허용합니다(유료 과금 방지)")
         extra = {"models": [model, *fallbacks]} if fallbacks else {}
-        return {"provider": provider, "base_url": OPENROUTER_BASE, "api_key": key, "model": model, "extra": extra}
+        return {"provider": provider, "base_url": OPENROUTER_BASE, "api_key": key, "model": model, "extra": extra,
+                "timeout": 60.0, "retries": 1}
     if provider == "lab":
         base, key = os.environ.get("LLM_BASE_URL"), os.environ.get("LLM_API_KEY")
         if not base or not key:
@@ -76,33 +76,109 @@ def llm_config() -> dict | None:
         extra = ({"chat_template_kwargs": {"enable_thinking": False}}
                  if os.environ.get("LLM_DISABLE_THINKING") == "1" else {})
         return {"provider": provider, "base_url": base, "api_key": key,
-                "model": os.environ.get("LLM_MODEL", "").strip(), "extra": extra}
+                "model": os.environ.get("LLM_MODEL", "").strip(), "extra": extra,
+                "timeout": float(os.environ.get("LLM_TIMEOUT", "45")), "retries": 0}
     raise SystemExit(f"LLM_PROVIDER={provider}: openrouter 또는 lab")
 
 
-class ParkingAssistant:
-    def __init__(self, store: CardStore | None = None):
-        cfg = llm_config()
-        if cfg is None:
-            raise SystemExit("LLM 설정이 없습니다: OPENROUTER_API_KEY·OPENROUTER_MODEL 또는 LLM_PROVIDER=lab + LLM_*")
+def llm_configs() -> list[dict]:
+    """LLM_PROVIDER 순서대로 설정이 갖춰진 연결 목록. 하나도 없으면 빈 목록."""
+    load_env()
+    names = [p.strip().lower() for p in os.environ.get("LLM_PROVIDER", "openrouter").split(",") if p.strip()]
+    return [c for c in (_provider_config(n) for n in names) if c is not None]
+
+
+def llm_config() -> dict | None:
+    """첫 번째 연결(하위 호환)."""
+    cfgs = llm_configs()
+    return cfgs[0] if cfgs else None
+
+
+class Backend:
+    """LLM 연결 하나. lab 은 모델 이름이 재기동마다 바뀌므로 서버 목록과 대조해 고른다."""
+
+    def __init__(self, cfg: dict):
         self.provider = cfg["provider"]
-        self.client = OpenAI(base_url=cfg["base_url"], api_key=cfg["api_key"], timeout=120, max_retries=2)
-        self.model = cfg["model"] or self.client.models.list().data[0].id
+        self.client = OpenAI(base_url=cfg["base_url"], api_key=cfg["api_key"], timeout=cfg["timeout"],
+                             max_retries=cfg["retries"])
+        self.wanted = cfg["model"]
         self.extra = cfg["extra"]
+        self.model = cfg["model"] if self.provider == "openrouter" else ""
+
+    def resolve(self) -> str:
+        """lab: 원하는 모델이 서버에 있으면 그것, 없으면 첫 번째 모델."""
+        if self.provider == "openrouter":
+            return self.model
+        ids = [m.id for m in self.client.models.list().data]
+        if not ids:
+            raise RuntimeError("LLM 서버에 모델이 없습니다")
+        chosen = self.wanted if self.wanted in ids else ids[0]
+        if self.wanted and chosen != self.wanted:
+            print(f"[agent] LLM_MODEL={self.wanted} 없음 → {chosen}", file=sys.stderr, flush=True)
+        self.model = chosen
+        return chosen
+
+    def complete(self, msgs: list[dict]):
+        if not self.model:
+            self.resolve()
+        try:
+            return self._create(msgs)
+        except NotFoundError:  # 재기동으로 모델 이름이 바뀐 경우 한 번만 다시 고른다
+            if self.provider != "lab":
+                raise
+            self.resolve()
+            return self._create(msgs)
+
+    def _create(self, msgs: list[dict]):
+        return self.client.chat.completions.create(
+            model=self.model, messages=msgs, tools=TOOL_SPECS, temperature=0.2, max_tokens=800,
+            extra_body=self.extra or None)
+
+
+class ParkingAssistant:
+    def __init__(self, store: CardStore | None = None, backends: list | None = None):
+        if backends is None:
+            cfgs = llm_configs()
+            if not cfgs:
+                raise SystemExit("LLM 설정이 없습니다: OPENROUTER_API_KEY·OPENROUTER_MODEL 또는 LLM_PROVIDER=lab + LLM_*")
+            backends = [Backend(c) for c in cfgs]
+        self.backends = backends
         self.store = store or CardStore()
 
+    @property
+    def provider(self) -> str:
+        return ",".join(b.provider for b in self.backends)
+
+    @property
+    def model(self) -> str:
+        return self.backends[0].model or self.backends[0].wanted or "(서버 기본)"
+
     def ask(self, question: str, history: list[dict] | None = None) -> dict:
-        """한 질문에 답한다. 반환: answer, tool_calls(이름·인자), elapsed_s."""
+        """한 질문에 답한다. 앞 연결이 실패하면 다음 연결로 처음부터 다시 묻는다.
+        반환: answer, tool_calls(이름·인자), elapsed_s, provider, model, failed(건너뛴 연결)."""
+        failed = []
+        t0 = time.time()
+        for i, b in enumerate(self.backends):
+            try:
+                out = self._ask(b, question, history)
+            except Exception as e:  # 마지막 연결까지 실패하면 호출자에게 넘긴다
+                failed.append({"provider": b.provider, "error": type(e).__name__})
+                print(f"[agent] {b.provider} 실패({type(e).__name__}: {str(e)[:200]})"
+                      + (" → 다음 연결" if i + 1 < len(self.backends) else ""), file=sys.stderr, flush=True)
+                if i + 1 == len(self.backends):
+                    raise
+                continue
+            return {**out, "elapsed_s": round(time.time() - t0, 1), "provider": b.provider, "model": b.model,
+                    "failed": failed}
+        raise RuntimeError("LLM 연결이 없습니다")
+
+    def _ask(self, b: Backend, question: str, history: list[dict] | None) -> dict:
         msgs = [{"role": "system", "content": SYSTEM_PROMPT}, *(history or []), {"role": "user", "content": question}]
         calls = []
-        t0 = time.time()
         for _ in range(MAX_STEPS):
-            resp = self.client.chat.completions.create(
-                model=self.model, messages=msgs, tools=TOOL_SPECS, temperature=0.2, max_tokens=800,
-                extra_body=self.extra or None)
-            m = resp.choices[0].message
+            m = b.complete(msgs).choices[0].message
             if not m.tool_calls:
-                return {"answer": (m.content or "").strip(), "tool_calls": calls, "elapsed_s": round(time.time() - t0, 1)}
+                return {"answer": (m.content or "").strip(), "tool_calls": calls}
             msgs.append({"role": "assistant", "content": m.content or "",
                          "tool_calls": [tc.model_dump() for tc in m.tool_calls]})
             for tc in m.tool_calls:
@@ -114,7 +190,7 @@ class ParkingAssistant:
                 calls.append({"name": tc.function.name, "args": args})
                 msgs.append({"role": "tool", "tool_call_id": tc.id, "content": json.dumps(result, ensure_ascii=False)})
         return {"answer": "죄송합니다. 지금은 답을 정리하지 못했습니다. 매장 이름을 다시 알려주세요.",
-                "tool_calls": calls, "elapsed_s": round(time.time() - t0, 1), "step_limit": True}
+                "tool_calls": calls, "step_limit": True}
 
 
 def main() -> None:
@@ -122,7 +198,7 @@ def main() -> None:
         raise SystemExit(__doc__)
     a = ParkingAssistant()
     out = a.ask(" ".join(sys.argv[1:]))
-    print(f"[{a.provider} {a.model}] [{out['elapsed_s']}s] tools: {out['tool_calls']}\n")
+    print(f"[{out['provider']} {out['model']}] [{out['elapsed_s']}s] tools: {out['tool_calls']} 건너뜀: {out['failed']}\n")
     print(out["answer"])
 
 
